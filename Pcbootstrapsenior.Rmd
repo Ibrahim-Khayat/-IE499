@@ -1,0 +1,195 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+install.packages("fpp3")
+```
+```{r}
+install.packages("urca")
+```
+```{r}
+library(urca)
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+```{r}
+library(fpp3)
+```
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+```{r}
+library(ggplot2) 
+library(dplyr)
+```
+```{r}
+#Load Data
+Chips <- tibble(
+  Month = c("2019 Jan","2019 Feb","2019 Mar","2019 Apr","2019 May","2019 Jun","2019 Jul","2019 Aug","2019 Sep","2019 Oct","2019 Nov","2019 Dec","2020 Jan","2020 Feb","2020 Mar","2020 Apr","2020 May","2020 Jun","2020 Jul","2020 Aug","2020 Sep","2020 Oct","2020 Nov","2020 Dec","2021 Jan","2021 Feb","2021 Mar","2021 Apr","2021 May","2021 Jun","2021 Jul","2021 Aug","2021 Sep","2021 Oct","2021 Nov","2021 Dec","2022 Jan","2022 Feb","2022 Mar","2022 Apr","2022 May","2022 Jun","2022 Jul","2022 Aug","2022 Sep","2022 Oct","2022 Nov","2022 Dec"), 
+  Observation = c(1296,1112,1129,979,752,676,748,998,1299,1727,1992,1999,1700,1518,1508,1208,1157,915,1284,1494,1773,2135,2201,2195,1662,1305,1389,1164,908,1116,1471,1527,1771,1952,2005,2144,1837,1655,1692,1387,1351,1521,1694,1667,2034,2255,2342,2502)
+)
+```
+```{r}
+Chips <- Chips |>
+  mutate(Month = yearmonth(Month)) |>
+  as_tsibble(index = Month)
+```
+```{r}
+Chips_train <- Chips %>%
+  filter(Month >= yearmonth("2019-01") & Month <= yearmonth("2022-02"))
+
+Chips_Test <- Chips %>%
+  filter(Month >= yearmonth("2022-03") & Month <= yearmonth("2022-12"))
+```
+
+
+```{r}
+dcmp <- Chips_train |>
+  model(
+    STL(Observation ~ trend(window = 5)))
+
+```
+```{r}
+#Generate sim data, cement is data, Cement is observation
+sim <- dcmp |>
+  generate(new_data = Chips_train, times = 100,
+           bootstrap_block_size = 16) |>
+  select(-.model, -Observation)
+```
+```{r}
+arima_forecasts <- sim |>
+  mutate(.sim = as.numeric(.sim)) |>
+  model(auto = ARIMA(.sim, stepwise = FALSE, approx = FALSE)) |>
+  forecast(h = 10)
+arima_forecasts |>
+  update_tsibble(key = .rep) |>
+  autoplot(.mean) +
+  autolayer(Chips_train, Observation) +
+  guides(colour = "none") +
+  labs(title = "Cement production: bootstrapped forecasts",
+       y="Tonnes ('000)")
+```
+```{r}
+
+
+
+bagged <- arima_forecasts |>
+  summarise(bagged_mean = mean(.mean))
+
+autoplot(Chips) +
+  autolayer(bagged, bagged_mean, col = "#D55E00") + 
+  autolayer(Chips_fc, .mean, col = "green") +
+  labs(title = "Cement production in Australia",
+       y = "Tonnes ('000)")
+
+
+
+
+```
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+```{r}
+bagged
+```
+```{r}
+dcmp <- Chips_train |>
+  model(
+    STL(Observation ~ trend(window = 5)))
+
+  components(dcmp) |>autoplot()
+
+```
+```{r}
+Chips_train |>
+    gg_tsdisplay(difference(Observation,1) |> difference(),
+                plot_type='partial', lag=36) +
+labs(title="seasonally difference", y="")
+
+Chips_fit <- Chips_train |>
+   model(
+    auto = ARIMA(Observation, stepwise = FALSE, approx = FALSE)
+  )
+Chips_fit |> pivot_longer(everything(), names_to = "Model name",
+                     values_to = "Orders")
+    
+Chips_fc <- Chips_fit |> forecast(h = 10)
+Chips_fc |>
+  autoplot(Chips, level = NULL) +
+  autolayer(bagged, bagged_mean, col = "#D55E00") +
+  labs(
+    y = "Unit Sold",
+    title = "Direct Auto Arima Vs Bagged Auto Arima"
+  ) +
+  scale_colour_manual(
+    values = c("Bagged Forecast" = "#D55E00", "Forecasted" = "blue"),
+    breaks = c("Bagged Forecast", "Forecasted")
+  ) +
+  guides(colour = guide_legend(title = "Legend"))
+```
+
+
+```{r}
+Chips_fc
+```
+
+
+```{r}
+|>
+  autoplot(Chips_train, level = NULL) +
+  autolayer(Chips_Test,
+    colour = "black"
+  ) +
+  labs(
+    y = "Megalitres",
+    title = "ARIMA for Monthly Chips Sales"
+  ) +
+  guides(colour = guide_legend(title = "Forecast"))
+```
+```{r}
+bagged <- arima_forecasts |>
+  summarise(bagged_mean = mean(.mean))
+
+autoplot(Chips) +
+  autolayer(bagged, bagged_mean, col = "#D55E00") + autolayer(Chips_fc, .mean, col = "green")+
+  labs(title = "Cement production in Australia",
+       y="Tonnes ('000)")
+```
+```{r}
+Chips_fit <- Chips |>
+  model(
+    Arima1 = ARIMA(Observation ~ pdq(0,1,3) + PDQ(1,0,0)),
+    Arima2 = ARIMA(Observation ~ pdq(0,1,2) + PDQ(1,0,0)),
+    Arima3 = ARIMA(Observation ~ pdq(0,1,0) + PDQ(1,1,0)),
+    Arima4 = ARIMA(Observation ~ pdq(1,1,3) + PDQ(1,1,0)),
+    Arima5 = ARIMA(Observation ~ pdq(0,1,1) + PDQ(1,1,0)),
+    Arima6 = ARIMA(Observation ~ pdq(0,1,1) + PDQ(0,1,0)),
+    Auto = ARIMA(Observation, stepwise = FALSE, approx = FALSE)
+) |>
+  mutate(combination = (Arima1+Arima2 + Arima3+Arima4+Arima5+Arima6 ) / 6)
+Chips_fit |> pivot_longer(everything(), names_to = "Model name",
+                     values_to = "Orders")
+    
+Chips_fc <- Chips_fit |> forecast(h = 36)
+Chips_fc |>
+ filter(.model %in% c("combination", "Auto")) |>
+  autoplot(Chips, level = NULL) +
+  autolayer(Chips,
+    colour = "black"
+  ) +
+  labs(
+    y = "Megalitres",
+    title = "Auto Arima with Arima 1",
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+  ) +
+  guides(colour = guide_legend(title = "Forecast"))
+
+```
+```{r}
+
+```
+
